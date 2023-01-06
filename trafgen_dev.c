@@ -27,6 +27,14 @@
 #include "trafgen_conf.h"
 #include "trafgen_dump.h"
 
+#ifdef ENABLE_TX_TIMESTAMPS
+#ifdef ENABLE_HARDWARE_TIMESTAMPING
+#define TIMESTAMPS_ARRAY 2
+#else
+#define TIMESTAMPS_ARRAY 0
+#endif
+#endif
+
 static int dev_pcap_open(struct dev_io *dev, const char *name, enum dev_io_mode_t mode)
 {
 	dev->pcap_magic = ORIGINAL_TCPDUMP_MAGIC;
@@ -180,7 +188,11 @@ static const struct dev_io_ops dev_pcap_ops = {
 static int dev_net_open(struct dev_io *dev, const char *name, enum dev_io_mode_t mode)
 {
 #ifdef ENABLE_TX_TIMESTAMPS
+#ifdef ENABLE_HARDWARE_TIMESTAMPING
 	int req = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+#else
+	int req = SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE;
+#endif
 	dev->file_timestamps = fopen("/tmp/out", "w");
 	if (dev->file_timestamps == NULL)
 	{
@@ -256,8 +268,8 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 				memcpy( &timestamps, CMSG_DATA(cmsg), sizeof(struct scm_timestamping));
 				struct sv_stamping data = {
 					.id = __builtin_bswap32(*((u_int32_t*) &(buf[35]))),
-					.tstp_s = timestamps.ts[2].tv_sec,
-					.tstp_ns = timestamps.ts[2].tv_nsec
+					.tstp_s = timestamps.ts[TIMESTAMPS_ARRAY].tv_sec,
+					.tstp_ns = timestamps.ts[TIMESTAMPS_ARRAY].tv_nsec
 				};
 
 #ifndef ENABLE_BINARY_STORING
