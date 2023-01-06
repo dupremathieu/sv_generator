@@ -61,3 +61,6 @@ config.log
 # Excluded from ignorance
 !.gitattributes
 !.gitignore
+
+# IDE
+.vscode/
