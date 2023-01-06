@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 #include "pcap_io.h"
+#include "config.h"
 
 enum dev_io_mode_t {
 	DEV_IO_IN	= 1 << 0,
@@ -30,6 +31,9 @@ struct dev_io {
 
 	const struct pcap_file_ops *pcap_ops;
 	const struct dev_io_ops *ops;
+#ifdef ENABLE_TX_TIMESTAMPS
+	FILE *file_timestamps;
+#endif
 };
 
 struct dev_io_ops {

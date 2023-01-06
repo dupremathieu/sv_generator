@@ -7,10 +7,15 @@
 
 #define _GNU_SOURCE
 
+#include "config.h"
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <net/ethernet.h>
+#ifdef ENABLE_TX_TIMESTAMPS
+#include <linux/net_tstamp.h>
+#include <time.h>
+#endif
 
 #include "sock.h"
 #include "xmalloc.h"
@@ -156,6 +161,13 @@ static void dev_pcap_close(struct dev_io *dev)
 		dev->pcap_ops->prepare_close_pcap(dev->fd, dev->pcap_mode);
 
 	close(dev->fd);
+#ifdef ENABLE_TX_TIMESTAMPS
+	if (dev->file_timestamps != NULL)
+	{
+		fclose(dev->file_timestamps);
+		dev->file_timestamps = NULL;
+	}
+#endif
 }
 
 static const struct dev_io_ops dev_pcap_ops = {
@@ -167,12 +179,40 @@ static const struct dev_io_ops dev_pcap_ops = {
 
 static int dev_net_open(struct dev_io *dev, const char *name, enum dev_io_mode_t mode)
 {
+#ifdef ENABLE_TX_TIMESTAMPS
+	int req = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+	dev->file_timestamps = fopen("/tmp/out", "w");
+	if (dev->file_timestamps == NULL)
+	{
+		panic("Cannot open /tmp/out %s:\n" , strerror(errno));
+	}
+#endif
 	dev->ifindex = __device_ifindex(name);
 	dev->dev_type = device_type(name);
 	dev->fd = pf_socket();
-
+#ifdef ENABLE_TX_TIMESTAMPS
+	if (setsockopt(dev->fd, SOL_SOCKET, SO_TIMESTAMPING, (void *)&req, sizeof(req)) == -1)
+	{
+		fclose(dev->file_timestamps);
+		dev->file_timestamps = NULL;
+		panic("Cannot configure hardware timetamping: %s!\n", strerror(errno));
+	}
+#endif
 	return 0;
 }
+
+#ifdef ENABLE_TX_TIMESTAMPS
+struct scm_timestamping {
+	struct timespec ts[3];
+};
+
+struct sv_stamping {
+	//u_int64_t id;
+	u_int32_t id;
+	__time_t tstp_s;
+	__time_t tstp_ns;
+};
+#endif
 
 static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 {
@@ -184,7 +224,58 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 	uint8_t *buf = pkt->payload;
 	size_t len = pkt->len;
 
-	return sendto(dev->fd, buf, len, 0, (struct sockaddr *) &saddr, sizeof(saddr));
+#ifdef ENABLE_TX_TIMESTAMPS
+	int ret;
+	ret = sendto(dev->fd, buf, len, 0, (struct sockaddr *)&saddr, sizeof(saddr));
+
+	if (ret != -1) {
+		/* get the rfrtm values */
+		struct msghdr msgh;
+		struct iovec io = {
+			.iov_base = calloc(120,1),
+			.iov_len = 120
+		};
+		msgh.msg_iov = &io;
+		msgh.msg_iovlen = 1;
+		msgh.msg_controllen = 2000;
+		msgh.msg_control = calloc(2000,1);
+		/* get the hardware timestamp */
+		int rx = recvmsg(dev->fd , &msgh, MSG_ERRQUEUE);
+		if (rx < 0) {
+			usleep(50);
+			rx = recvmsg(dev->fd , &msgh, MSG_ERRQUEUE);
+			if (rx < 0) {
+				printf("recvmsg %d  %s\n",rx,strerror(errno));
+			}
+		}
+
+		struct cmsghdr *cmsg;
+		struct scm_timestamping timestamps;
+		for (cmsg = CMSG_FIRSTHDR(&msgh); cmsg != NULL; cmsg = CMSG_NXTHDR(&msgh, cmsg)) {
+			if(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING) {
+				memcpy( &timestamps, CMSG_DATA(cmsg), sizeof(struct scm_timestamping));
+				struct sv_stamping data = {
+					.id = __builtin_bswap32(*((u_int32_t*) &(buf[35]))),
+					.tstp_s = timestamps.ts[2].tv_sec,
+					.tstp_ns = timestamps.ts[2].tv_nsec
+				};
+
+#ifndef ENABLE_BINARY_STORING
+				fprintf(dev->file_timestamps, "%08x %ld %ld\n",
+					data.id,
+					data.tstp_s,
+					data.tstp_ns);
+#else
+				fwrite(&data, sizeof(struct sv_stamping), 1, f);
+#endif
+			}
+		}
+		free(msgh.msg_control);
+	}
+	return ret;
+#else
+	return sendto(dev->fd, buf, len, 0, (struct sockaddr *)&saddr, sizeof(saddr));
+#endif
 }
 
 static int dev_net_set_link_type(struct dev_io *dev, int link_type)

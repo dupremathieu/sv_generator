@@ -35,6 +35,9 @@
 #include <netdb.h>
 #include <math.h>
 #include <unistd.h>
+#ifdef ENABLE_TX_RING_TIMESTAMPS
+#include <linux/net_tstamp.h>
+#endif
 
 #include "xmalloc.h"
 #include "die.h"
@@ -747,7 +750,21 @@ static void xmit_fastpath_or_die(struct ctx *ctx, unsigned int cpu, unsigned lon
 
 	set_sock_prio(sock, 512);
 
+#ifdef ENABLE_TX_RING_TIMESTAMPS
+	int req =  SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+	if (setsockopt(sock, SOL_PACKET, PACKET_TIMESTAMP, (void *)&req, sizeof(req)) == -1)
+	{
+		panic("Cannot configure hardware timetamping TX_RING: %s!\n", strerror(errno));
+	}
+
+	if (setsockopt(sock, SOL_SOCKET, SO_TIMESTAMPING, (void *)&req, sizeof(req)) == -1)
+	{
+		panic("Cannot configure hardware timetamping TX_RING SOL_SOCKET: %s!\n", strerror(errno));
+	}
+#endif
+
 	ring_tx_setup(&tx_ring, sock, size, ifindex, ctx->jumbo_support, ctx->verbose);
+
 
 	drop_privileges(ctx->enforce, ctx->uid, ctx->gid);
 
@@ -807,6 +824,21 @@ static void xmit_fastpath_or_die(struct ctx *ctx, unsigned int cpu, unsigned lon
 
 	while (pull_and_flush_tx_ring_wait(sock) < 0 && errno == ENOBUFS && retry-- > 0)
 		usleep(10000);
+#ifdef ENABLE_TX_RING_TIMESTAMPS
+	retry = 3;
+	while ((hdr->tp_h.tp_status & (TP_STATUS_SEND_REQUEST | TP_STATUS_SENDING)) && retry-- > 0) {
+		usleep(200);
+	}
+	if ((hdr->tp_h.tp_status & TP_STATUS_TS_SOFTWARE)) {
+		printf("Use software timestamping\n");
+	}
+	else if (!(hdr->tp_h.tp_status & TP_STATUS_TS_RAW_HARDWARE))
+	{
+		printf("No timestamping\n");
+	}
+
+	printf("second: %u nanosecond %u\n", hdr->tp_h.tp_sec, hdr->tp_h.tp_nsec);
+#endif
 	destroy_tx_ring(sock, &tx_ring);
 
 	stats[cpu].tx_packets = tx_packets;
@@ -1364,7 +1396,9 @@ int main(int argc, char **argv)
 
 	for (i = 0, tx_packets = tx_bytes = 0; i < ctx.cpu_num; i++) {
 		while ((__get_state(i) & CPU_STATS_STATE_RES) == 0)
+		{
 			sched_yield();
+		}
 
 		tx_packets += stats[i].tx_packets;
 		tx_bytes   += stats[i].tx_bytes;
