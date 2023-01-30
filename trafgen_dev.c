@@ -220,7 +220,7 @@ struct scm_timestamping {
 
 struct sv_stamping {
 	//u_int64_t id;
-	u_int32_t id;
+	u_int64_t id;
 	__time_t tstp_s;
 	__time_t tstp_ns;
 };
@@ -260,20 +260,19 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 				printf("recvmsg %d  %s\n",rx,strerror(errno));
 			}
 		}
-
 		struct cmsghdr *cmsg;
 		struct scm_timestamping timestamps;
 		for (cmsg = CMSG_FIRSTHDR(&msgh); cmsg != NULL; cmsg = CMSG_NXTHDR(&msgh, cmsg)) {
 			if(cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPING) {
 				memcpy( &timestamps, CMSG_DATA(cmsg), sizeof(struct scm_timestamping));
 				struct sv_stamping data = {
-					.id = __builtin_bswap32(*((u_int32_t*) &(buf[35]))),
+					.id = *((u_int64_t*) &(buf[33])),
 					.tstp_s = timestamps.ts[TIMESTAMPS_ARRAY].tv_sec,
 					.tstp_ns = timestamps.ts[TIMESTAMPS_ARRAY].tv_nsec
 				};
 
 #ifndef ENABLE_BINARY_STORING
-				fprintf(dev->file_timestamps, "%08x %ld %ld\n",
+				fprintf(dev->file_timestamps, "%016lx %ld %ld\n",
 					data.id,
 					data.tstp_s,
 					data.tstp_ns);
