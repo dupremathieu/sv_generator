@@ -243,19 +243,20 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 	if (ret != -1) {
 		/* get the rfrtm values */
 		struct msghdr msgh;
-		struct iovec io = {
-			.iov_base = calloc(120,1),
-			.iov_len = 120
-		};
+		struct iovec io =
+		{
+			.iov_base = calloc(pkt->len, 1),
+			.iov_len = pkt->len,
+	};
 		msgh.msg_iov = &io;
 		msgh.msg_iovlen = 1;
+		msgh.msg_name = NULL;
+		msgh.msg_namelen = 0;
 		msgh.msg_controllen = 2000;
 		msgh.msg_control = calloc(2000,1);
 		/* get the hardware timestamp */
 		int rx = recvmsg(dev->fd , &msgh, MSG_ERRQUEUE);
 		if (rx < 0) {
-			usleep(50);
-			rx = recvmsg(dev->fd , &msgh, MSG_ERRQUEUE);
 			if (rx < 0) {
 				printf("recvmsg %d  %s\n",rx,strerror(errno));
 			}
@@ -281,6 +282,7 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 #endif
 			}
 		}
+		free(msgh.msg_iov->iov_base);
 		free(msgh.msg_control);
 	}
 	return ret;
