@@ -7,6 +7,8 @@
 
 #define _GNU_SOURCE
 
+#include "config.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
@@ -35,7 +37,7 @@
 #include <netdb.h>
 #include <math.h>
 #include <unistd.h>
-#ifdef ENABLE_TX_RING_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 #include <linux/net_tstamp.h>
 #endif
 
@@ -750,8 +752,12 @@ static void xmit_fastpath_or_die(struct ctx *ctx, unsigned int cpu, unsigned lon
 
 	set_sock_prio(sock, 512);
 
-#ifdef ENABLE_TX_RING_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
+#if ENABLE_HARDWARE_TIMESTAMPING
 	int req =  SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+#else
+	int req = SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE;
+#endif
 	if (setsockopt(sock, SOL_PACKET, PACKET_TIMESTAMP, (void *)&req, sizeof(req)) == -1)
 	{
 		panic("Cannot configure hardware timetamping TX_RING: %s!\n", strerror(errno));
@@ -759,7 +765,7 @@ static void xmit_fastpath_or_die(struct ctx *ctx, unsigned int cpu, unsigned lon
 
 	if (setsockopt(sock, SOL_SOCKET, SO_TIMESTAMPING, (void *)&req, sizeof(req)) == -1)
 	{
-		panic("Cannot configure hardware timetamping TX_RING SOL_SOCKET: %s!\n", strerror(errno));
+		panic("Cannot configure timetamping TX_RING SOL_SOCKET: %s!\n", strerror(errno));
 	}
 #endif
 
@@ -824,7 +830,7 @@ static void xmit_fastpath_or_die(struct ctx *ctx, unsigned int cpu, unsigned lon
 
 	while (pull_and_flush_tx_ring_wait(sock) < 0 && errno == ENOBUFS && retry-- > 0)
 		usleep(10000);
-#ifdef ENABLE_TX_RING_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 	retry = 3;
 	while ((hdr->tp_h.tp_status & (TP_STATUS_SEND_REQUEST | TP_STATUS_SENDING)) && retry-- > 0) {
 		usleep(200);

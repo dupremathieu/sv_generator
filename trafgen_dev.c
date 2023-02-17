@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <net/ethernet.h>
-#ifdef ENABLE_TX_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 #include <linux/net_tstamp.h>
 #include <time.h>
 #endif
@@ -27,8 +27,8 @@
 #include "trafgen_conf.h"
 #include "trafgen_dump.h"
 
-#ifdef ENABLE_TX_TIMESTAMPS
-#ifdef ENABLE_HARDWARE_TIMESTAMPING
+#if ENABLE_TX_TIMESTAMPS
+#if ENABLE_HARDWARE_TIMESTAMPING
 #define TIMESTAMPS_ARRAY 2
 #else
 #define TIMESTAMPS_ARRAY 0
@@ -169,7 +169,7 @@ static void dev_pcap_close(struct dev_io *dev)
 		dev->pcap_ops->prepare_close_pcap(dev->fd, dev->pcap_mode);
 
 	close(dev->fd);
-#ifdef ENABLE_TX_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 	if (dev->file_timestamps != NULL)
 	{
 		fclose(dev->file_timestamps);
@@ -187,8 +187,8 @@ static const struct dev_io_ops dev_pcap_ops = {
 
 static int dev_net_open(struct dev_io *dev, const char *name, enum dev_io_mode_t mode)
 {
-#ifdef ENABLE_TX_TIMESTAMPS
-#ifdef ENABLE_HARDWARE_TIMESTAMPING
+#if ENABLE_TX_TIMESTAMPS
+#if ENABLE_HARDWARE_TIMESTAMPING
 	int req = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
 #else
 	int req = SOF_TIMESTAMPING_TX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE;
@@ -202,7 +202,7 @@ static int dev_net_open(struct dev_io *dev, const char *name, enum dev_io_mode_t
 	dev->ifindex = __device_ifindex(name);
 	dev->dev_type = device_type(name);
 	dev->fd = pf_socket();
-#ifdef ENABLE_TX_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 	if (setsockopt(dev->fd, SOL_SOCKET, SO_TIMESTAMPING, (void *)&req, sizeof(req)) == -1)
 	{
 		fclose(dev->file_timestamps);
@@ -213,7 +213,7 @@ static int dev_net_open(struct dev_io *dev, const char *name, enum dev_io_mode_t
 	return 0;
 }
 
-#ifdef ENABLE_TX_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 struct scm_timestamping {
 	struct timespec ts[3];
 };
@@ -236,7 +236,7 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 	uint8_t *buf = pkt->payload;
 	size_t len = pkt->len;
 
-#ifdef ENABLE_TX_TIMESTAMPS
+#if ENABLE_TX_TIMESTAMPS
 	int ret;
 	ret = sendto(dev->fd, buf, len, 0, (struct sockaddr *)&saddr, sizeof(saddr));
 
@@ -272,7 +272,7 @@ static int dev_net_write(struct dev_io *dev, struct packet *pkt)
 					.tstp_ns = timestamps.ts[TIMESTAMPS_ARRAY].tv_nsec
 				};
 
-#ifndef ENABLE_BINARY_STORING
+#if ! ENABLE_BINARY_STORING
 				fprintf(dev->file_timestamps, "%016lx %ld %ld\n",
 					data.id,
 					data.tstp_s,

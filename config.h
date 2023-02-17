@@ -14,6 +14,8 @@
 #define HAVE_TPACKET3 1
 
 #define ENABLE_TX_TIMESTAMPS 1
-/* Uncomment this to enable hardware timestamping */
-//#define ENABLE_HARDWARE_TIMESTAMPING 1
+#define ENABLE_HARDWARE_TIMESTAMPING 0
+#define ENABLE_RX_HARWARE_TIMESTAMPING 0
+
+#define ENABLE_BINARY_STORING 0
 #endif /* CONFIG_H */
